@@ -1,0 +1,79 @@
+/* HTIT Brand Tokens — Bộ nhận diện thương hiệu
+ * Công ty TNHH Cảng Quốc tế TIL Cảng Hải Phòng
+ * Nguồn: Bộ nhận diện thương hiệu HTIT (9).pdf
+ * Chỉ dùng các màu dưới đây cho thành phần thương hiệu.
+ */
+
+:root {
+  /* Màu thương hiệu */
+  --htit-blue: #436AB3;      /* Xanh chủ đạo — màu nhận diện */
+  --htit-gold: #E7CF7F;      /* Vàng — chỉ làm điểm nhấn */
+  --htit-sky: #ABE1FA;       /* Xanh nhạt — nền phụ */
+  --htit-sand: #E5D4AE;      /* Be — nền phụ */
+
+  /* Trung tính */
+  --htit-white: #FFFFFF;
+  --htit-black: #000000;
+
+  /* Biến thể độ sáng (được phép, không đổi tông màu) */
+  --htit-blue-900: #2F4E86;
+  --htit-blue-700: #3A5C9C;
+  --htit-blue-300: #7C9BD1;
+  --htit-blue-100: #DCE5F3;
+
+  /* Vai trò */
+  --htit-action: var(--htit-blue);
+  --htit-action-text: var(--htit-white);
+  --htit-link: var(--htit-blue);
+  --htit-surface: var(--htit-white);
+  --htit-surface-alt: var(--htit-blue-100);
+  --htit-accent: var(--htit-gold);
+  --htit-accent-text: var(--htit-black);
+  --htit-header-bg: var(--htit-white);
+  --htit-header-text: var(--htit-black);
+
+  /* Typography */
+  --htit-font: "Barlow", Arial, Helvetica, sans-serif;
+  --htit-font-alt: Arial, Helvetica, sans-serif;
+  --htit-weight-light: 300;
+  --htit-weight-regular: 400;
+  --htit-weight-medium: 500;
+  --htit-weight-semibold: 600;
+  --htit-weight-bold: 700;
+  --htit-weight-extrabold: 800;
+
+  /* Logo */
+  --htit-logo-min-height: 72px;   /* digital, tối thiểu */
+  --htit-logo-clear-space: 0.25;  /* × chiều cao logo, tối thiểu 4 phía */
+}
+
+body {
+  font-family: var(--htit-font);
+}
+
+.htit-logo {
+  height: var(--htit-logo-min-height);
+  width: auto;               /* không set width cùng lúc -> tránh méo hình */
+  display: block;
+}
+
+/* Logo luôn giữ khoảng trống an toàn 1/4 chiều cao ở 4 phía */
+.htit-logo-space {
+  padding: calc(var(--htit-logo-min-height) / 4);
+}
+
+.htit-btn-primary {
+  background: var(--htit-action);
+  color: var(--htit-action-text);
+}
+
+.htit-btn-secondary {
+  background: transparent;
+  color: var(--htit-action);
+  border: 1px solid var(--htit-action);
+}
+
+.htit-badge {
+  background: var(--htit-accent);
+  color: var(--htit-accent-text);
+}

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HTIT Remote</string>
+    <string name="a11y_label">HTIT Remote — Điều khiển từ xa</string>
+    <string name="a11y_desc">Cần thiết để thực thi lệnh chạm, vuốt, Back, Home theo yêu cầu của phiên hỗ trợ mà bạn chấp nhận. Ứng dụng không tự thao tác khi không có phiên đang hoạt động.</string>
+    <string name="notification_channel">HTIT Remote</string>
+</resources>

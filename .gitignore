@@ -1,0 +1,28 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# Gradle / Android
+.gradle/
+agent/app/build/
+local.properties
+.cxx/
+captures/
+
+# IDE
+.idea/
+.vs/
+*.iml
+
+# Logs & local tool state
+*.log
+.commandcode/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# local server run output
+server-run.*

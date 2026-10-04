@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTIT Remote — Hỗ trợ Android nội bộ</title>
+<link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+<header>
+  <img src="logo/header.png" alt="HTIT">
+  <h1>HTIT Remote</h1>
+  <span id="connState" class="pill idle">chưa kết nối</span>
+  <span id="deviceName" class="muted"></span>
+  <span id="statusMsg"></span>
+</header>
+<main>
+  <section id="connectPanel" class="card">
+    <form id="connectForm" style="display:flex;gap:10px;flex:1;flex-wrap:wrap;align-items:center">
+      <input id="host" placeholder="Địa chỉ IP / hostname của thiết bị Android" required>
+      <input id="port" type="number" min="1" max="65535" value="8262" style="width:100px" required>
+      <button type="submit">Kết nối</button>
+    </form>
+    <button id="disconnectBtn" class="secondary" disabled>Ngắt kết nối</button>
+  </section>
+  <section id="viewPanel" class="hidden">
+    <div id="canvasWrap">
+      <canvas id="screen"></canvas>
+    </div>
+    <div class="controls card">
+      <button id="backBtn" class="secondary">⟵ Back</button>
+      <button id="homeBtn" class="secondary">⌂ Home</button>
+      <span id="fps" class="muted"></span>
+    </div>
+  </section>
+  <section id="pairedPanel" class="card hidden">
+    <details>
+      <summary>Thiết bị đã ghép đôi</summary>
+      <div id="pairedList"></div>
+    </details>
+  </section>
+  <section id="helpPanel" class="card">
+    <details open>
+      <summary>Hướng dẫn thao tác điều khiển</summary>
+      <ul>
+        <li>Click trái: chạm (tap)</li>
+        <li>Nhấn giữ &gt; 600ms rồi thả: chạm giữ (long press)</li>
+        <li>Nhấn giữ và kéo rồi thả: vuốt (swipe)</li>
+        <li>Nút Back / Home: tương tác các phím hệ thống Android</li>
+      </ul>
+    </details>
+  </section>
+</main>
+<script src="app.js?v=4"></script>
+</body>
+</html>
