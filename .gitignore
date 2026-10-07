@@ -1,4 +1,8 @@
-# .NET
+node_modules/
+data/
+coverage/
+
+# .NET legacy build output
 bin/
 obj/
 *.user
@@ -11,18 +15,12 @@ local.properties
 .cxx/
 captures/
 
-# IDE
+# IDE / local
 .idea/
 .vs/
 *.iml
-
-# Logs & local tool state
 *.log
 .commandcode/
-
-# OS
+.playwright-cli/
 Thumbs.db
 .DS_Store
-
-# local server run output
-server-run.*

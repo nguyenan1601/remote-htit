@@ -6,8 +6,11 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.PixelFormat;
+import android.graphics.Rect;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
 import android.media.Image;
@@ -15,10 +18,13 @@ import android.media.ImageReader;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Handler;
+import android.os.Build;
 import android.os.HandlerThread;
 import android.os.IBinder;
+import android.os.SystemClock;
 import android.util.DisplayMetrics;
 import android.util.Log;
+import android.view.Display;
 import android.view.WindowManager;
 
 import org.json.JSONObject;
@@ -36,22 +42,40 @@ public final class ScreenCastService extends Service {
     private static final String TAG = "HTITRemote";
     private static final String CH_ID = "htit_remote_cast";
     private static final int FGS_ID = 91;
-    static final long FRAME_INTERVAL_MS = 125; // ~8 fps MVP target
+    static final long FRAME_INTERVAL_MS = 67; // cap at ~15 fps
+    private static final int JPEG_QUALITY = 90;
 
     /** Session from MainActivity before the service starts (avoid bind races). */
-    public static volatile AgentServer.AgentSession pendingSession;
+    public static volatile RemoteSession pendingSession;
 
     private volatile MediaProjection projection;
     private volatile VirtualDisplay display;
     private volatile ImageReader reader;
-    private volatile AgentServer.AgentSession holder;
+    private volatile RemoteSession holder;
     private Handler castHandler;
     private HandlerThread castThread;
+    private DisplayManager displayManager;
+    private int captureWidth;
+    private int captureHeight;
+    private int captureRotation;
+    private Bitmap paddedBitmap;
+    private Bitmap frameBitmap;
+    private Canvas frameCanvas;
+    private final ByteArrayOutputStream jpegStream = new ByteArrayOutputStream(256 * 1024);
+    private long lastFrameAtMs;
     private final AtomicBoolean streaming = new AtomicBoolean(false);
+    private final AtomicBoolean tornDown = new AtomicBoolean(false);
     private static volatile ScreenCastService activeInstance;
+    private final DisplayManager.DisplayListener displayListener = new DisplayManager.DisplayListener() {
+        @Override public void onDisplayAdded(int displayId) { }
+        @Override public void onDisplayRemoved(int displayId) { }
+        @Override public void onDisplayChanged(int displayId) {
+            if (displayId == Display.DEFAULT_DISPLAY && streaming.get()) resizeStream();
+        }
+    };
 
-    public static void startStreaming(Context ctx, AgentServer.AgentSession session, int resultCode, Intent resultData) {
-        if (session == null || !session.active || !session.isReady()) {
+    public static void startStreaming(Context ctx, RemoteSession session, int resultCode, Intent resultData) {
+        if (session == null || !session.isReady()) {
             pendingSession = null;
             return;
         }
@@ -66,15 +90,6 @@ public final class ScreenCastService extends Service {
         ScreenCastService inst = activeInstance;
         if (inst != null) inst.teardown("user-stop-service");
         ctx.stopService(new Intent(ctx, ScreenCastService.class));
-    }
-
-    private void dlog(String m) {
-        try {
-            java.io.File f = new java.io.File(getExternalFilesDir(null), "cast.log");
-            java.io.FileWriter w = new java.io.FileWriter(f, true);
-            w.write(new java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(new java.util.Date()) + " " + m + "\n");
-            w.close();
-        } catch (Exception ignored) { }
     }
 
     @Override
@@ -102,6 +117,14 @@ public final class ScreenCastService extends Service {
         castThread = new HandlerThread("htr-cast");
         castThread.start();
         castHandler = new Handler(castThread.getLooper());
+        displayManager = getSystemService(DisplayManager.class);
+        displayManager.registerDisplayListener(displayListener, castHandler);
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        if (castHandler != null && streaming.get()) castHandler.post(this::resizeStream);
     }
 
     @Override
@@ -109,16 +132,14 @@ public final class ScreenCastService extends Service {
         int resultCode = intent != null ? intent.getIntExtra("code", -1) : -1;
         Intent data = intent != null ? intent.getParcelableExtra("data") : null;
         if (pendingSession != null) { holder = pendingSession; pendingSession = null; }
-        AgentServer.AgentSession s = holder;
-        dlog("onStart data=" + (data != null) + " s=" + (s != null) + " active=" + (s != null && s.active) + " ready=" + (s != null && s.isReady()) + " code=" + resultCode);
-        if (data == null || s == null || !s.active || !s.isReady()) {
+        RemoteSession s = holder;
+        if (data == null || s == null || !s.isReady()) {
             teardown("no-data");
             return START_NOT_STICKY;
         }
         try {
             projection = ((MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE))
                     .getMediaProjection(resultCode, data);
-            dlog("projection created");
             projection.registerCallback(new MediaProjection.Callback() {
                 @Override
                 public void onStop() {
@@ -135,112 +156,175 @@ public final class ScreenCastService extends Service {
     }
 
     private void startStream() {
-        DisplayMetrics dm = new DisplayMetrics();
-        WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-        wm.getDefaultDisplay().getRealMetrics(dm);
-        int w = Math.max(1, dm.widthPixels);
-        int h = Math.max(1, dm.heightPixels);
-        reader = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2);
-        display = projection.createVirtualDisplay("htit-capture", w, h, dm.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC, reader.getSurface(), null, castHandler);
+        int[] metrics = captureMetrics();
+        int w = metrics[0];
+        int h = metrics[1];
+        int densityDpi = metrics[2];
+        captureRotation = metrics[3];
+        captureWidth = w;
+        captureHeight = h;
         if (!streaming.compareAndSet(false, true)) return;
+        reader = createReader(w, h);
+        display = projection.createVirtualDisplay("htit-capture", w, h, densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC, reader.getSurface(), null, castHandler);
         try {
             JSONObjectAccept(w, h);
-            dlog("accept sent " + w + "x" + h);
         } catch (Exception e) {
-            dlog("accept-failed: " + e.getClass().getName() + " : " + e);
             teardown("accept-failed");
+        }
+    }
+
+    private int[] captureMetrics() {
+        DisplayMetrics dm = new DisplayMetrics();
+        WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        Display currentDisplay = wm.getDefaultDisplay();
+        currentDisplay.getRealMetrics(dm);
+        int sourceW = Math.max(1, dm.widthPixels);
+        int sourceH = Math.max(1, dm.heightPixels);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Rect bounds = wm.getMaximumWindowMetrics().getBounds();
+            sourceW = Math.max(1, bounds.width());
+            sourceH = Math.max(1, bounds.height());
+        }
+        int rotation = currentDisplay.getRotation();
+        int orientation = getResources().getConfiguration().orientation;
+        if ((orientation == Configuration.ORIENTATION_LANDSCAPE && sourceW < sourceH)
+                || (orientation == Configuration.ORIENTATION_PORTRAIT && sourceW > sourceH)) {
+            int swap = sourceW;
+            sourceW = sourceH;
+            sourceH = swap;
+        }
+        return new int[] { sourceW, sourceH, dm.densityDpi, rotation };
+    }
+
+    private ImageReader createReader(int width, int height) {
+        ImageReader result = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
+        result.setOnImageAvailableListener(this::onImageAvailable, castHandler);
+        return result;
+    }
+
+    private void resizeStream() {
+        if (!streaming.get() || display == null) return;
+        int[] metrics = captureMetrics();
+        int w = metrics[0];
+        int h = metrics[1];
+        if (w == captureWidth && h == captureHeight) {
+            captureRotation = metrics[3];
             return;
         }
-        castHandler.post(frameLoop);
+        ImageReader replacement = createReader(w, h);
+        try {
+            ImageReader previous = reader;
+            display.setSurface(null);
+            display.resize(w, h, metrics[2]);
+            display.setSurface(replacement.getSurface());
+            reader = replacement;
+            captureWidth = w;
+            captureHeight = h;
+            captureRotation = metrics[3];
+            lastFrameAtMs = 0;
+            releaseEncoderBuffers();
+            if (previous != null) {
+                previous.setOnImageAvailableListener(null, null);
+                previous.close();
+            }
+        } catch (Exception e) {
+            replacement.setOnImageAvailableListener(null, null);
+            replacement.close();
+            Log.w(TAG, "resize capture error", e);
+            teardown("resize-failed");
+        }
     }
 
     private void JSONObjectAccept(int w, int h) throws IOException {
-        AgentServer.AgentSession s = holder;
+        RemoteSession s = holder;
         if (s == null) throw new IOException("Không còn phiên đang hoạt động");
         JSONObject acc = new JSONObject();
         try {
             acc.put("w", w);
             acc.put("h", h);
         } catch (Exception ignored) { }
-        s.sendPacket(Wire.T_ACCEPT, acc.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        s.startStreaming(w, h);
     }
 
-    private final Runnable frameLoop = new Runnable() {
-        @Override
-        public void run() {
-            if (!streaming.get()) return;
-            AgentServer.AgentSession s = holder;
-            if (s != null && reader != null) {
-                Image img = null;
-                try {
-                    img = reader.acquireLatestImage();
-                    if (img != null) {
-                        byte[] jpeg = encode(img);
-                        if (jpeg != null) s.sendFrame(jpeg);
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "frame error: " + e);
-                    teardown("frame-failed");
-                    return;
-                } finally {
-                    if (img != null) img.close();
-                }
-            }
-            castHandler.postDelayed(this, FRAME_INTERVAL_MS);
+    private void onImageAvailable(ImageReader source) {
+        if (source != reader) return;
+        WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        if (wm.getDefaultDisplay().getRotation() != captureRotation) {
+            castHandler.post(this::resizeStream);
+            return;
         }
-    };
+        Image image = null;
+        try {
+            image = source.acquireLatestImage();
+            if (image == null || !streaming.get()) return;
+            long now = SystemClock.elapsedRealtime();
+            if (now - lastFrameAtMs < FRAME_INTERVAL_MS) return;
+            lastFrameAtMs = now;
+            RemoteSession session = holder;
+            if (session != null && session.canSendFrame()) session.sendFrame(encode(image));
+        } catch (Exception e) {
+            Log.w(TAG, "frame error: " + e);
+            teardown("frame-failed");
+        } finally {
+            if (image != null) image.close();
+        }
+    }
 
-    /** RGBA_8888 Image -> scaled JPEG bytes. */
-    private static byte[] encode(Image img) {
+    /** RGBA_8888 Image -> JPEG, reusing buffers to avoid a large allocation on every frame. */
+    private synchronized byte[] encode(Image img) {
         Image.Plane p = img.getPlanes()[0];
         ByteBuffer buf = p.getBuffer();
         buf.rewind();
         int w = img.getWidth();
         int h = img.getHeight();
-        int rowStride = p.getRowStride();
-        Bitmap padded = Bitmap.createBitmap(rowStride / 4, h, Bitmap.Config.ARGB_8888);
-        padded.copyPixelsFromBuffer(buf);
-        Bitmap cropped = padded.getWidth() > w ? Bitmap.createBitmap(padded, 0, 0, w, h) : padded;
-        Bitmap send = cropped;
-        if (cropped.getWidth() > 1080) {
-            int targetW = 1080;
-            int targetH = cropped.getHeight() * targetW / cropped.getWidth();
-            send = Bitmap.createScaledBitmap(cropped, targetW, Math.max(1, targetH), true);
+        int rowWidth = p.getRowStride() / p.getPixelStride();
+        if (paddedBitmap == null || paddedBitmap.getWidth() != rowWidth || paddedBitmap.getHeight() != h) {
+            releaseEncoderBuffers();
+            paddedBitmap = Bitmap.createBitmap(rowWidth, h, Bitmap.Config.ARGB_8888);
+            if (rowWidth != w) {
+                frameBitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                frameCanvas = new Canvas(frameBitmap);
+            }
         }
-        ByteArrayOutputStream os = new ByteArrayOutputStream();
-        try {
-            send.compress(Bitmap.CompressFormat.JPEG, 60, os);
-            return os.toByteArray();
-        } finally {
-            if (padded != cropped) padded.recycle();
-            cropped.recycle();
-            if (send != cropped) send.recycle();
+        paddedBitmap.copyPixelsFromBuffer(buf);
+        Bitmap output = paddedBitmap;
+        if (frameBitmap != null) {
+            frameCanvas.drawBitmap(paddedBitmap, 0, 0, null);
+            output = frameBitmap;
         }
+        jpegStream.reset();
+        output.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, jpegStream);
+        return jpegStream.toByteArray();
+    }
+
+    private synchronized void releaseEncoderBuffers() {
+        frameCanvas = null;
+        if (frameBitmap != null) frameBitmap.recycle();
+        if (paddedBitmap != null) paddedBitmap.recycle();
+        frameBitmap = null;
+        paddedBitmap = null;
+        jpegStream.reset();
     }
 
     /** Central teardown — safe to call multiple times. */
     public void teardown(String reason) {
-        dlog("teardown " + reason);
-        if (!streaming.compareAndSet(true, false)) return;
+        if (!tornDown.compareAndSet(false, true)) return;
+        streaming.set(false);
         try {
-            if (castHandler != null) castHandler.removeCallbacks(frameLoop);
-            AgentServer.AgentSession s = holder;
+            RemoteSession s = holder;
             holder = null;
-            if (s != null && s.isReady()) {
-                try {
-                    s.sendPacket(Wire.T_STOP,
-                            ("{\"why\":\"Thiết bị ngừng chia sẻ màn hình (" + reason + ")\"}").getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                } catch (IOException ignored) { }
-            }
+            if (s != null && s.isReady()) s.close("Thiết bị ngừng chia sẻ màn hình (" + reason + ")");
             if (display != null) {
                 try { display.release(); } catch (Exception ignored) { }
                 display = null;
             }
             if (reader != null) {
+                reader.setOnImageAvailableListener(null, null);
                 try { reader.close(); } catch (Exception ignored) { }
                 reader = null;
             }
+            releaseEncoderBuffers();
             if (projection != null) {
                 try { projection.stop(); } catch (Exception ignored) { }
                 projection = null;
@@ -256,6 +340,7 @@ public final class ScreenCastService extends Service {
     public void onDestroy() {
         activeInstance = null;
         teardown("service-destroy");
+        if (displayManager != null) displayManager.unregisterDisplayListener(displayListener);
         if (castThread != null) castThread.quitSafely();
         super.onDestroy();
     }

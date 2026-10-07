@@ -41,6 +41,17 @@ public final class InputExecutor {
                 case "home":
                     GestureGlobal.home();
                     break;
+                case "text": {
+                    String text = o.optString("text", "");
+                    if (!text.isEmpty() && text.length() <= 500) GestureGlobal.inputText(text);
+                    break;
+                }
+                case "backspace":
+                    GestureGlobal.backspace();
+                    break;
+                case "enter":
+                    GestureGlobal.enter();
+                    break;
                 default:
                     Log.w(TAG, "Hành động không hỗ trợ: " + action);
             }

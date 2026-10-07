@@ -1,56 +1,117 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="vi">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HTIT Remote — Hỗ trợ Android nội bộ</title>
-<link rel="stylesheet" href="style.css?v=4">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>HTIT Remote — Hỗ trợ nội bộ</title>
+  <link rel="icon" href="logo/nen-trang.png">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <img src="logo/header.png" alt="HTIT">
-  <h1>HTIT Remote</h1>
-  <span id="connState" class="pill idle">chưa kết nối</span>
-  <span id="deviceName" class="muted"></span>
-  <span id="statusMsg"></span>
-</header>
-<main>
-  <section id="connectPanel" class="card">
-    <form id="connectForm" style="display:flex;gap:10px;flex:1;flex-wrap:wrap;align-items:center">
-      <input id="host" placeholder="Địa chỉ IP / hostname của thiết bị Android" required>
-      <input id="port" type="number" min="1" max="65535" value="8262" style="width:100px" required>
-      <button type="submit">Kết nối</button>
+  <section id="loginView" class="login-shell">
+    <form id="loginForm" class="login-card">
+      <img src="logo/header.png" alt="HTIT">
+      <h1>HTIT Remote</h1>
+      <p>Đăng nhập tài khoản nội bộ để bắt đầu hỗ trợ thiết bị.</p>
+      <label>Tên đăng nhập<input id="username" autocomplete="username" required></label>
+      <label>Mật khẩu<input id="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Đăng nhập</button>
+      <span id="loginError" class="error-text"></span>
     </form>
-    <button id="disconnectBtn" class="secondary" disabled>Ngắt kết nối</button>
   </section>
-  <section id="viewPanel" class="hidden">
-    <div id="canvasWrap">
-      <canvas id="screen"></canvas>
-    </div>
-    <div class="controls card">
-      <button id="backBtn" class="secondary">⟵ Back</button>
-      <button id="homeBtn" class="secondary">⌂ Home</button>
-      <span id="fps" class="muted"></span>
-    </div>
+  <section id="appView" class="hidden">
+    <header>
+      <img src="logo/header.png" alt="HTIT">
+      <h1>HTIT Remote</h1>
+      <span id="connState" class="pill idle">chưa kết nối</span>
+      <span id="deviceName" class="muted"></span>
+      <span id="statusMsg"></span>
+      <button id="logoutBtn" class="link-button">Đăng xuất</button>
+    </header>
+    <main>
+      <section id="savedPage" class="page-view">
+      <h2 class="page-title">Điều khiển thiết bị</h2>
+      <section id="savedPanel" class="card">
+        <p class="muted">Nhập tên và IP rồi bấm Lưu để giữ thiết bị cho lần kết nối sau. Bấm Kết nối để remote ngay; khi Android chia sẻ màn hình thành công, thiết bị cũng được tự lưu. Màn hình điều khiển hiển thị ngay bên dưới.</p>
+        <form id="saveDeviceForm" class="saved-form">
+          <label for="savedDeviceName">Tên dễ nhớ<input id="savedDeviceName" maxlength="80" placeholder="Tablet kho A" required></label>
+          <label for="savedDeviceIp">IP thiết bị<input id="savedDeviceIp" maxlength="15" placeholder="192.168.1.100" required></label>
+          <button id="saveDeviceBtn" type="submit">Kết nối</button>
+          <button id="saveForLaterBtn" type="submit" class="secondary">Lưu</button>
+          <button id="checkConnectionBtn" type="button" class="secondary">Kiểm tra kết nối</button>
+          <button id="cancelSaveBtn" type="button" class="secondary hidden">Hủy</button>
+        </form>
+        <p id="savedDevicesError" class="error-text" aria-live="polite"></p>
+        <div id="savedDevices" class="device-list">Chưa có thiết bị đã lưu.</div>
+        <div id="savedPingResult" aria-live="polite"></div>
+      </section>
+      <div id="sessionBar" class="session-bar hidden">
+        <div id="sessionTabs" class="session-tabs hidden" role="tablist" aria-label="Thiết bị đang hỗ trợ"></div>
+        <button id="disconnectBtn" class="secondary" disabled>Ngắt tất cả</button>
+      </div>
+      <div id="sessions"></div>
+      <section class="card help">Chọn tab của thiết bị cần thao tác. Click để chạm, giữ 600 ms để nhấn giữ, kéo để vuốt. Khi đã chạm vào ô nhập trên Android, gõ trực tiếp bằng bàn phím máy tính. Thiết bị Android phải chấp nhận yêu cầu và cấp quyền chia sẻ màn hình trước khi điều khiển.</section>
+      </section>
+      <details class="card additional-connections hidden">
+        <summary>Kết nối bằng mã / thiết bị trực tuyến</summary>
+        <section id="connectPanel" class="connect-row">
+          <form id="connectForm">
+            <label for="connectMethod">Kết nối bằng<select id="connectMethod"><option value="ip" selected>IP thiết bị</option><option value="code">Mã thiết bị</option></select></label>
+            <label id="codeField" class="hidden" for="deviceCode">Mã thiết bị<input id="deviceCode" inputmode="numeric" pattern="[0-9 ]{9,11}" maxlength="11" placeholder="000 000 000" disabled></label>
+            <label id="ipField" for="deviceIp">IP thiết bị<input id="deviceIp" type="text" inputmode="decimal" maxlength="15" placeholder="192.168.1.100" required></label>
+            <button type="submit">Kết nối</button>
+          </form>
+        </section>
+        <section id="onlinePanel">
+          <strong>Thiết bị đang trực tuyến</strong>
+          <p class="muted">Chọn Kết nối để mở thêm tab, giữ các phiên hiện tại. Thiết bị được tự lưu sau khi chia sẻ màn hình thành công.</p>
+          <div id="onlineDevices" class="device-list">Chưa có thiết bị.</div>
+        </section>
+      </details>
+      <section id="networkPage" class="page-view">
+      <h2 class="page-title">Kiểm tra mạng nội bộ</h2>
+      <section class="card">
+        <strong>Ping tới IP</strong>
+        <p class="muted">Nhập IP của bất kỳ thiết bị nào trong mạng nội bộ: máy tính, điện thoại, máy in hoặc router. Máy chủ HTIT gửi 4 gói ping ICMP trực tiếp tới IP đích; thiết bị không cần cài ứng dụng.</p>
+        <form id="pingForm" class="ping-form">
+          <label for="pingTargetIp">IP đích (IPv4 / IPv6)<input id="pingTargetIp" type="text" maxlength="45" placeholder="192.168.1.1" required spellcheck="false"></label>
+          <button id="pingBtn" type="submit" disabled>Ping</button>
+        </form>
+        <div id="pingResult" aria-live="polite"></div>
+      </section>
+      <section class="card hidden">
+        <strong>Thiết bị đang trực tuyến</strong>
+        <p class="muted">Bấm Kiểm tra mạng để đo kết nối từ Android tới máy chủ nội bộ: ping HTTP và tốc độ upload/download. Mỗi lần dùng khoảng 16 MiB dữ liệu, có thể làm tăng độ trễ khi đang remote. Phản hồi lỗi HTTP không phải tỷ lệ mất gói ICMP.</p>
+        <div id="networkDevices" class="device-list">Chưa có thiết bị.</div>
+      </section>
+      </section>
+    </main>
   </section>
-  <section id="pairedPanel" class="card hidden">
-    <details>
-      <summary>Thiết bị đã ghép đôi</summary>
-      <div id="pairedList"></div>
-    </details>
-  </section>
-  <section id="helpPanel" class="card">
-    <details open>
-      <summary>Hướng dẫn thao tác điều khiển</summary>
-      <ul>
-        <li>Click trái: chạm (tap)</li>
-        <li>Nhấn giữ &gt; 600ms rồi thả: chạm giữ (long press)</li>
-        <li>Nhấn giữ và kéo rồi thả: vuốt (swipe)</li>
-        <li>Nút Back / Home: tương tác các phím hệ thống Android</li>
-      </ul>
-    </details>
-  </section>
-</main>
-<script src="app.js?v=4"></script>
+  <template id="sessionTemplate">
+    <section class="remote-session" role="tabpanel">
+      <div class="session-heading card">
+        <strong data-role="deviceName"></strong>
+        <span data-role="connState" class="pill connecting">đang kết nối</span>
+        <button data-role="close" class="secondary">Đóng</button>
+        <p data-role="statusMsg" class="muted" aria-live="polite"></p>
+      </div>
+      <div data-role="viewPanel" class="hidden">
+        <div class="canvas-wrap" data-role="canvasWrap"><canvas data-role="screen"></canvas></div>
+        <textarea data-role="keyboardInput" class="keyboard-capture" tabindex="-1" inputmode="none" maxlength="500" aria-label="Bàn phím điều khiển Android" disabled></textarea>
+      </div>
+      <div class="controls card">
+        <button data-role="backBtn" class="secondary" disabled>← Back</button>
+        <button data-role="homeBtn" class="secondary" disabled>⌂ Home</button>
+        <button data-role="nativeSizeBtn" class="secondary" aria-pressed="false" disabled>Xem 100%</button>
+        <button data-role="networkTestBtn" class="secondary" disabled>Kiểm tra mạng thiết bị</button>
+        <button data-role="disconnectBtn" class="secondary">Ngắt kết nối</button>
+        <button data-role="reconnectBtn" class="secondary hidden">Kết nối lại</button>
+        <span data-role="resolution" class="muted"></span>
+        <span data-role="fps" class="muted"></span>
+      </div>
+      <section data-role="networkResult" class="card hidden" aria-live="polite"></section>
+    </section>
+  </template>
+  <script src="app.js"></script>
 </body>
 </html>
